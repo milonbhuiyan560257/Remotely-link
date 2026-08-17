@@ -1,15 +1,7 @@
-
-
 name: APK Decompiler
 
 on:
   workflow_dispatch:
-    inputs:
-      apk_path:
-        description: "APK file path"
-        required: true
-        default: "my_app.apk"
-        type: string
 
 permissions:
   contents: read
@@ -17,6 +9,9 @@ permissions:
 jobs:
   decompile-job:
     runs-on: ubuntu-latest
+
+    env:
+      APK_PATH: my_app.apk
 
     steps:
       - name: Checkout Repository
@@ -31,35 +26,68 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.11"
 
       - name: Install Apktool
         run: |
-          sudo apt-get update
-          sudo apt-get install -y apktool
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar \
+            -O apktool.jar
+
+          echo '#!/bin/sh' > apktool
+          echo 'exec java -jar "$GITHUB_WORKSPACE/apktool.jar" "$@"' >> apktool
+          chmod +x apktool
+
+          sudo mv apktool /usr/local/bin/apktool
 
       - name: Check APK
-        env:
-          APK_PATH: ${{ inputs.apk_path }}
         run: |
-          echo "Checking APK..."
+          echo "APK: $APK_PATH"
+
           if [ ! -f "$APK_PATH" ]; then
-            echo "ERROR: APK not found: $APK_PATH"
+            echo "ERROR: APK file not found!"
+            ls -lah
             exit 1
           fi
-          echo "APK found:"
+
           ls -lh "$APK_PATH"
 
-      - name: Decompile APK
-        env:
-          APK_PATH: ${{ inputs.apk_path }}
+      - name: Validate APK
         run: |
-          python main.py "$APK_PATH"
+          python - <<'PY'
+          import os
+          import zipfile
+
+          apk = os.environ["APK_PATH"]
+
+          print("File:", apk)
+          print("File size:", os.path.getsize(apk), "bytes")
+
+          if not zipfile.is_zipfile(apk):
+              raise SystemExit(
+                  "ERROR: my_app.apk is not a valid ZIP/APK file."
+              )
+
+          print("OK: APK ZIP structure is valid.")
+          PY
+
+      - name: Decompile APK
+        run: |
+          APK_NAME="$(basename "$APK_PATH" .apk)"
+          OUTPUT_DIR="decompiled_${APK_NAME}"
+
+          rm -rf "$OUTPUT_DIR"
+
+          echo "APK: $APK_PATH"
+          echo "Output: $OUTPUT_DIR"
+
+          apktool d "$APK_PATH" \
+            -o "$OUTPUT_DIR" \
+            -f
 
       - name: Show Decompiled Files
         run: |
           echo "Decompiled output:"
-          find decompiled_* -maxdepth 3 -type f | sort
+          find decompiled_* -maxdepth 3 -type f | sort | head -200
 
       - name: Upload Decompiled Files
         uses: actions/upload-artifact@v4
@@ -67,4 +95,3 @@ jobs:
           name: decompiled-apk-files
           path: decompiled_*/
           if-no-files-found: error
-
