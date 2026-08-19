@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      APK_PATH: my_app.apk
+            APK_PATH: F-Droid.apk
 
     steps:
       - name: Checkout Repository
